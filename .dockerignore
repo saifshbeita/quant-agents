@@ -10,3 +10,4 @@ scratch
 strategy_handoff.md
 runs/*
 !runs/demo-*.jsonl
+gpu_stats

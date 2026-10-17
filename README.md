@@ -38,19 +38,7 @@ If the endpoint is unreachable, the UI shows a banner, disables live runs, and r
 
 ### Option A: vLLM on AMD GPUs (ROCm)
 
-```bash
-docker run -d --name vllm-server --network=host \
-  --device=/dev/kfd --device=/dev/dri --group-add video --ipc=host \
-  -v ~/.cache/huggingface:/root/.cache/huggingface -e HF_TOKEN="$HF_TOKEN" \
-  rocm/vllm:latest \
-  vllm serve Qwen/Qwen3.6-35B-A3B --port 8000 --max-model-len 32768 --reasoning-parser qwen3
-```
-
-```env
-LLM_BASE_URL=http://<gpu-host>:8000/v1
-LLM_API_KEY=EMPTY
-LLM_MODEL=Qwen/Qwen3.6-35B-A3B
-```
+`./run_amd_vllm.sh` starts the official `vllm/vllm-openai-rocm:v0.31.0` image. It serves `Qwen/Qwen3.6-35B-A3B` with `--reasoning-parser qwen3 --max-model-len 32768` and requires the API key from `.env`. The port is published on `127.0.0.1:8000` only. For a full one-command setup, see [Deploy on AMD Developer Cloud](#deploy-on-amd-developer-cloud) below.
 
 `--reasoning-parser qwen3` moves the model's `<think>` output out of the answer. Without it, the agents strip `<think>` blocks themselves. Set `LLM_DISABLE_THINKING=1` to turn thinking off for faster iterations.
 
@@ -70,6 +58,45 @@ docker run -p 8501:8501 --env-file .env quant-agents
 ```
 
 `.env` is never baked into the image (see `.dockerignore`). Pass it at runtime.
+
+## Deploy on AMD Developer Cloud
+
+Use an MI300X droplet with the Ubuntu + ROCm image. SSH in, then run:
+
+```bash
+git clone https://github.com/saifshbeita/quant-agents.git
+cd quant-agents
+cp .env.example .env
+./deploy_amd.sh
+```
+
+`deploy_amd.sh` is safe to re-run. It:
+
+1. Checks that `rocm-smi` works, `/dev/kfd` exists, and Docker is running.
+2. Writes a random `LLM_API_KEY` into `.env` if none is set.
+3. Starts vLLM with `run_amd_vllm.sh` and waits for `/v1/models`, printing load progress. The first start downloads about 70 GB of weights into `~/.cache/huggingface`; later starts reuse them. A vLLM server that is already healthy is left running.
+4. Builds the app image and runs it with `--network host` at `http://0.0.0.0:8501`, pointed at `http://127.0.0.1:8000/v1`. Both containers use `--restart unless-stopped`.
+5. Sends one smoke-test completion through the app's own LLM client.
+6. Prints the public URL `http://<public-ip>:8501` and the `rocm-smi` output.
+
+vLLM listens on `127.0.0.1:8000` only and needs the API key, so only the Streamlit app on port 8501 is public. The app has no login, so share the URL only with your judges and team.
+
+Useful follow-ups:
+
+```bash
+./deploy_amd.sh --app-only        # rebuild/restart the app after editing .env or pulling code
+./deploy_amd.sh --restart-vllm    # recreate the vLLM container (e.g. after changing VLLM_IMAGE)
+docker logs -f vllm-server        # model loading, request throughput
+docker logs -f quant-agents       # app logs
+./capture_gpu_stats.sh            # record rocm-smi during a demo run (Ctrl-C to stop)
+./capture_gpu_stats.sh 600 1      # ...or for 600 s at 1 s intervals
+```
+
+`capture_gpu_stats.sh` writes `gpu_stats/<timestamp>/`, which contains `snapshot.txt`, `samples.log`, `samples.csv`, and `vllm_throughput.log` (vLLM's own prompt and generation tokens/s for the window). Keep this folder as GPU evidence for the demo.
+
+**If calls are too slow because of thinking:** Qwen3.6 reasons before answering by default, which can add tens of seconds per agent call. Set `LLM_DISABLE_THINKING=1` in `.env`, then restart the app with `./deploy_amd.sh --app-only`. `docker restart` alone does not reload `.env`. vLLM does not need a restart, because the app sends `enable_thinking=false` per request.
+
+**Recording a demo replay:** after a good live run, copy its log to keep it as the offline fallback: `cp runs/<run_id>.jsonl runs/demo-<name>.jsonl`, then commit it.
 
 ## Environment variables
 
@@ -95,6 +122,11 @@ docker run -p 8501:8501 --env-file .env quant-agents
 | `DEMO_BENCHMARK_SHARPE` | `0.5` | OOS Sharpe gate in demo mode |
 | `DEMO_MAX_DRAWDOWN_LIMIT` | `0.25` | OOS drawdown gate in demo mode |
 | `RUNS_DIR` | `./runs` | Where run logs are written and replays are read |
+| `HF_TOKEN` | (empty) | Hugging Face token for vLLM downloads (optional for Qwen) |
+| `VLLM_IMAGE` | `vllm/vllm-openai-rocm:v0.31.0` | vLLM ROCm image used by `run_amd_vllm.sh` |
+| `TENSOR_PARALLEL_SIZE` | `1` | GPUs per vLLM server (one MI300X holds the BF16 model) |
+| `VLLM_MAX_MODEL_LEN` | `32768` | vLLM context length |
+| `VLLM_READY_TIMEOUT` | `3600` | Seconds `deploy_amd.sh` waits for the first model load |
 
 ## Recorded runs and replay
 
