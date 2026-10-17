@@ -101,8 +101,12 @@ def ping_endpoint(timeout: float = 3.0) -> tuple[bool, str]:
     url = config.LLM_BASE_URL.rstrip("/") + "/models"
     try:
         r = requests.get(url, headers={"Authorization": f"Bearer {config.LLM_API_KEY}"}, timeout=timeout)
+    except requests.exceptions.Timeout:
+        return False, f"no answer within {timeout:.0f}s"
+    except requests.exceptions.ConnectionError:
+        return False, "connection refused or host unreachable"
     except requests.exceptions.RequestException as e:
-        return False, f"{type(e).__name__}: {e}"
+        return False, type(e).__name__
     if r.status_code == 200:
         return True, "ok"
     return False, f"HTTP {r.status_code}"
