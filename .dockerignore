@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.git
+.venv
+venv
+scratch
+**/__pycache__
+*.pyc
+strategy_handoff.md
+runs/*
+!runs/demo-*.jsonl
