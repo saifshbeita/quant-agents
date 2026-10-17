@@ -36,7 +36,7 @@ Most backtests lie: they are overfitted, they quietly use tomorrow's prices, and
 ## Demo
 
 <div align="center">
-  <img src="docs/demo.png" alt="quant-agents dashboard" width="100%">
+     <img src="Docs/demo.png" alt="quant-agents dashboard" width="100%">
   <br>
   <sub>Live dashboard: agent timeline, out-of-sample equity curve and the deterministic gate.</sub>
 </div>
