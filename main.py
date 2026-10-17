@@ -2,7 +2,7 @@ import os
 import pandas as pd
 from core.graph import build_graph
 from data.fetcher import get_historical_data
-from config import TARGET_TICKER
+from config import TARGET_TICKER, MAX_IDEAS, MAX_ITERATIONS, RECURSION_LIMIT, get_thresholds
 
 def main():
     print(f"Loading historical data for {TARGET_TICKER}...")
@@ -16,6 +16,12 @@ def main():
         "error_logs": "",
         "auditor_feedback": "",
         "iteration_count": 0,
+        "idea_count": 0,
+        "tried_ideas": [],
+        "ticker": TARGET_TICKER,
+        "max_ideas": MAX_IDEAS,
+        "max_iterations": MAX_ITERATIONS,
+        "thresholds": get_thresholds(),
         "status": "pending",
         "final_report": ""
     }
@@ -24,7 +30,7 @@ def main():
     
     print("Starting Execution Graph...\n" + "="*40)
     
-    for output in app.stream(initial_state):
+    for output in app.stream(initial_state, config={"recursion_limit": RECURSION_LIMIT}):
         for node_name, state_update in output.items():
             print(f"--- Node Executed: {node_name.upper()} ---")
             
@@ -35,8 +41,8 @@ def main():
                 print(f"Status: {state_update['status']}")
                 
             if "backtest_metrics" in state_update and state_update["backtest_metrics"]:
-                metrics = state_update["backtest_metrics"]
-                print(f"Metrics -> Sharpe: {metrics.get('sharpe', 0):.2f} | Max Drawdown: {metrics.get('max_drawdown', 0)*100:.2f}% | Return: {metrics.get('total_return', 0)*100:.2f}%")
+                metrics = state_update["backtest_metrics"]["test"]
+                print(f"OOS Metrics -> Sharpe: {metrics.get('sharpe', 0):.2f} | Max Drawdown: {metrics.get('max_drawdown', 0)*100:.2f}% | Return: {metrics.get('total_return', 0)*100:.2f}%")
                 
             if "error_logs" in state_update and state_update["error_logs"]:
                 print(f"Errors detected! Snippet: {str(state_update['error_logs'])[:300]}...")

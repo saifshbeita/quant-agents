@@ -1,25 +1,18 @@
 import os
-import requests
 import pandas as pd
 from dotenv import load_dotenv
 from config import LLM_BASE_URL, TARGET_TICKER
 from data.fetcher import get_historical_data
 from core.sandbox import execute_strategy
+from core.llm import ping_endpoint
 
 def test_connectivity():
     print(f"Testing connectivity to LLM server at {LLM_BASE_URL}...")
-    try:
-        # Check standard OpenAI models endpoint
-        url = LLM_BASE_URL if not LLM_BASE_URL.endswith('/') else LLM_BASE_URL[:-1]
-        response = requests.get(f"{url}/models", timeout=3)
-        if response.status_code == 200:
-            print("[OK] Successfully connected to LLM server.")
-            print(f"     Available models endpoint responded with 200 OK.")
-        else:
-            print(f"[WARN] Connected, but returned status code: {response.status_code}")
-    except requests.exceptions.RequestException as e:
-        print(f"[FAIL] Could not connect to LLM server.")
-        print(f"       Details: {e}")
+    ok, detail = ping_endpoint()
+    if ok:
+        print("[OK] Successfully connected to LLM server (GET /models returned 200).")
+    else:
+        print(f"[FAIL] Could not connect to LLM server: {detail}")
         print("       (This is expected if the vLLM server is not currently running)")
 
 def test_data_fetch():
@@ -52,13 +45,26 @@ def generate_signals(df: pd.DataFrame) -> pd.Series:
     result = execute_strategy(dummy_code, df)
     if result["success"]:
         print("[OK] Sandbox execution successful.")
-        metrics = result['metrics']
-        print(f"     Computed Metrics -> Sharpe: {metrics.get('sharpe', 0):.2f}, "
-              f"Max Drawdown: {metrics.get('max_drawdown', 0)*100:.2f}%, "
-              f"Return: {metrics.get('total_return', 0)*100:.2f}%")
+        for split in ("train", "test"):
+            m = result["metrics"][split]
+            print(f"     {split:5s} -> Sharpe: {m['sharpe']:.2f}, Max Drawdown: {m['max_drawdown']*100:.2f}%, "
+                  f"Return: {m['total_return']*100:.2f}%, Trades: {m['trades']}")
+        print(f"     Lookahead test: {'PASS' if result['lookahead']['passed'] else 'FAIL'}")
     else:
         print("[FAIL] Sandbox execution resulted in an error:")
         print(result["error"])
+
+    print("\nTesting lookahead detection on a strategy that peeks at tomorrow...")
+    cheat = """
+def generate_signals(df):
+    return np.sign(df['Close'].shift(-1) - df['Close'])
+"""
+    result = execute_strategy(cheat, df)
+    if result["success"] and not result["lookahead"]["passed"]:
+        print(f"[OK] Lookahead caught: {result['lookahead']['message'][:160]}...")
+    else:
+        print("[FAIL] Lookahead strategy was not flagged.")
+
 
 def main():
     print("=== System Integration Test ===")
