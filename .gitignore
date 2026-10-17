@@ -154,3 +154,9 @@ cython_debug/
 
 # PyCharm
 .idea/
+
+# quant-agents outputs
+strategy_handoff.md
+# Run logs; keep curated replays by naming them runs/demo-*.jsonl
+runs/*
+!runs/demo-*.jsonl
